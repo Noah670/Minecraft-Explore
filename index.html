@@ -80,6 +80,27 @@
       opacity: 0.85;
       font-style: italic;
     }
+
+    #status {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 18px 26px;
+      border-radius: 12px;
+      font-size: 16px;
+      text-align: center;
+      z-index: 200;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+      max-width: 320px;
+    }
+
+    #status.hidden {
+      display: none;
+    }
     
     #hotbar {
       position: fixed;
@@ -255,6 +276,8 @@
   </div>
   
   <div id="hotbar"></div>
+
+  <div id="status">Loading world...</div>
   
   <div class="mobile-controls">
     <div id="joystick">
@@ -266,51 +289,145 @@
     <div id="lookArea"></div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
-    // Initialize Three.js scene
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 50, 150);
+    const statusEl = document.getElementById('status');
+    const showStatus = (message) => {
+      statusEl.textContent = message;
+      statusEl.classList.remove('hidden');
+    };
+    const hideStatus = () => statusEl.classList.add('hidden');
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    camera.position.set(0, 18, 8);
+    const reportError = (message, error) => {
+      const detail = error && error.message ? `\n${error.message}` : '';
+      showStatus(`${message}${detail}`);
+      console.error(message, error);
+    };
 
-    // Renderer
-    const canvas = document.getElementById('gameCanvas');
-    const renderer = new THREE.WebGLRenderer({ 
-      canvas: canvas,
-      antialias: true,
-      alpha: false
+    window.addEventListener('error', (event) => {
+      reportError('An error occurred while loading the world.', event.error || event.message);
     });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
-    scene.add(ambientLight);
+    window.addEventListener('unhandledrejection', (event) => {
+      reportError('A loading error occurred.', event.reason);
+    });
 
-    const sunLight = new THREE.DirectionalLight(0xfff9e6, 0.85);
-    sunLight.position.set(80, 120, 60);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.left = -60;
-    sunLight.shadow.camera.right = 60;
-    sunLight.shadow.camera.top = 60;
-    sunLight.shadow.camera.bottom = -60;
-    scene.add(sunLight);
+    const scriptSources = [
+      'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+      'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+      'https://unpkg.com/three@0.128.0/build/three.min.js'
+    ];
 
-    const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x6B5D3F, 0.5);
-    scene.add(hemiLight);
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    });
+
+    const loadThree = async () => {
+      for (const src of scriptSources) {
+        try {
+          await loadScript(src);
+          if (window.THREE) return;
+        } catch (error) {
+          console.warn(error);
+        }
+      }
+      throw new Error('Three.js failed to load from all CDNs.');
+    };
+
+    const startGame = async () => {
+      showStatus('Loading 3D engine...');
+      try {
+        await loadThree();
+      } catch (error) {
+        reportError('Unable to load Three.js. Check your connection or try another browser.', error);
+        return;
+      }
+
+      if (!window.THREE) {
+        reportError('Three.js failed to initialize.');
+        return;
+      }
+
+      showStatus('Generating world...');
+
+      initWorld(window.THREE);
+    };
+
+    const isWebGLAvailable = () => {
+      try {
+        const testCanvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext && (
+          testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl')
+        ));
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const initWorld = (THREE) => {
+      if (!isWebGLAvailable()) {
+        showStatus('WebGL is unavailable. Please try another browser or enable hardware acceleration.');
+        return;
+      }
+
+      // Initialize Three.js scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87CEEB);
+      scene.fog = new THREE.Fog(0x87CEEB, 50, 150);
+
+      // Camera
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      camera.position.set(0, 18, 8);
+
+      // Renderer
+      const canvas = document.getElementById('gameCanvas');
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        alpha: false
+      });
+      renderer.setClearColor(0x87CEEB, 1);
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      canvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        showStatus('WebGL context lost. Trying to restore...');
+      }, false);
+
+      canvas.addEventListener('webglcontextrestored', () => {
+        showStatus('WebGL context restored. Reload the page if the world does not reappear.');
+      }, false);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(ambientLight);
+
+      const sunLight = new THREE.DirectionalLight(0xfff9e6, 0.85);
+      sunLight.position.set(80, 120, 60);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.left = -60;
+      sunLight.shadow.camera.right = 60;
+      sunLight.shadow.camera.top = 60;
+      sunLight.shadow.camera.bottom = -60;
+      scene.add(sunLight);
+
+      const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x6B5D3F, 0.5);
+      scene.add(hemiLight);
 
     // Materials
     const createMaterial = (color) => {
@@ -351,6 +468,7 @@
     // World
     const world = new Map();
     let selectedBlock = 'grass';
+    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     function getBlockKey(x, y, z) {
       return `${x}|${y}|${z}`;
@@ -367,13 +485,14 @@
       return Math.floor(base + detail) + 6;
     }
 
+    const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+
     function addBlock(x, y, z, type) {
       const key = getBlockKey(x, y, z);
       if (world.has(key)) return;
 
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
       const material = blockMaterials[type];
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(blockGeometry, material);
       
       mesh.position.set(x, y, z);
       mesh.castShadow = type !== 'water';
@@ -389,7 +508,6 @@
       
       if (block && block.type !== 'water') {
         scene.remove(block.mesh);
-        block.mesh.geometry.dispose();
         world.delete(key);
       }
     }
@@ -414,7 +532,7 @@
     }
 
     // Generate world
-    const size = 20;
+    const size = isMobile ? 14 : 20;
     const waterLevel = 5;
 
     for (let x = -size; x <= size; x++) {
@@ -465,8 +583,6 @@
     const mouse = { x: 0, y: 0, locked: false };
     const joystick = { active: false, deltaX: 0, deltaY: 0 };
     const lookTouch = { active: false, lastX: 0, lastY: 0 };
-    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
     // Event listeners
     document.addEventListener('keydown', (e) => {
       keys[e.code] = true;
@@ -735,20 +851,33 @@
       });
     }
 
+    function resizeRendererToDisplaySize() {
+      const width = canvas.clientWidth || window.innerWidth;
+      const height = canvas.clientHeight || window.innerHeight;
+      if (canvas.width !== width || canvas.height !== height) {
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+    }
+
     // Animation loop
     function animate() {
       requestAnimationFrame(animate);
+      resizeRendererToDisplaySize();
       update();
       renderer.render(scene, camera);
+      hideStatus();
     }
     animate();
 
     // Resize
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      resizeRendererToDisplaySize();
     });
+  };
+
+  startGame();
   </script>
 </body>
 </html>
