@@ -293,6 +293,54 @@
     const statusEl = document.getElementById('status');
     const canvas = document.getElementById('gameCanvas');
     const hotbar = document.getElementById('hotbar');
+    const showStatus = (message) => {
+      statusEl.textContent = message;
+      statusEl.classList.remove('hidden');
+    };
+    const hideStatus = () => statusEl.classList.add('hidden');
+
+    const reportError = (message, error) => {
+      const detail = error && error.message ? `\n${error.message}` : '';
+      showStatus(`${message}${detail}`);
+      console.error(message, error);
+    };
+
+    window.addEventListener('error', (event) => {
+      reportError('An error occurred while loading the world.', event.error || event.message);
+    });
+    renderer.setClearColor(0x87CEEB, 1);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff9e6, 0.85);
+    sunLight.position.set(80, 120, 60);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.left = -60;
+    sunLight.shadow.camera.right = 60;
+    sunLight.shadow.camera.top = 60;
+    sunLight.shadow.camera.bottom = -60;
+    scene.add(sunLight);
+
+    const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x6B5D3F, 0.5);
+    scene.add(hemiLight);
+
+     
+    // Materials
+    const createMaterial = (color) => {
+      return new THREE.MeshLambertMaterial({ 
+        color: color,
+        flatShading: true
+      });
+    };
 
     const showStatus = (message) => {
       statusEl.textContent = message;
@@ -300,6 +348,10 @@
     };
 
     const hideStatus = () => statusEl.classList.add('hidden');
+    // World
+    const world = new Map();
+    let selectedBlock = 'grass';
+    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     const reportError = (message, error) => {
       const detail = error && error.message ? `
@@ -345,6 +397,30 @@ ${error.message}` : '';
         ));
       } catch (error) {
         return false;
+    const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+    function addBlock(x, y, z, type) {
+      const key = getBlockKey(x, y, z);
+      if (world.has(key)) return;
+
+      const material = blockMaterials[type];
+      const mesh = new THREE.Mesh(blockGeometry, material);
+      
+      mesh.position.set(x, y, z);
+      mesh.castShadow = type !== 'water';
+      mesh.receiveShadow = true;
+      
+      scene.add(mesh);
+      world.set(key, { mesh, type });
+    }
+
+    function removeBlock(x, y, z) {
+      const key = getBlockKey(x, y, z);
+      const block = world.get(key);
+      
+      if (block && block.type !== 'water') {
+        scene.remove(block.mesh);
+        world.delete(key);
       }
     }
 
@@ -356,13 +432,55 @@ ${error.message}` : '';
       if (!isWebGLAvailable()) {
         showStatus('WebGL is unavailable. Enable hardware acceleration or use a modern browser.');
         return;
+    // Generate world
+    const size = isMobile ? 14 : 20;
+    const waterLevel = 5;
+
+    for (let x = -size; x <= size; x++) {
+      for (let z = -size; z <= size; z++) {
+        const height = getHeight(x, z);
+        const isBeach = height <= waterLevel + 1;
+        
+        for (let y = 0; y <= height; y++) {
+          let type;
+          if (y === height) {
+            type = isBeach ? 'sand' : 'grass';
+          } else if (y > height - 2) {
+            type = isBeach ? 'sand' : 'dirt';
+          } else {
+            type = 'stone';
+          }
+          addBlock(x, y, z, type);
+        }
+        
+        if (height < waterLevel) {
+          for (let y = height + 1; y <= waterLevel; y++) {
+            addBlock(x, y, z, 'water');
+          }
+        }
+        
+        if (!isBeach && height > waterLevel + 1 && Math.random() < 0.01 && x % 5 === 0 && z % 5 === 0) {
+          placeTree(x, height + 1, z);
+        }
       }
 
       showStatus('Building world...');
 
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x87CEEB);
-      scene.fog = new THREE.Fog(0x87CEEB, 35, 120);
+    // Input
+    const keys = {};
+    const mouse = { x: 0, y: 0, locked: false };
+    const joystick = { active: false, deltaX: 0, deltaY: 0 };
+    const lookTouch = { active: false, lastX: 0, lastY: 0 };
+    // Event listeners
+    document.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 8) {
+        const types = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'cobblestone', 'planks'];
+        selectedBlock = types[num - 1];
+        updateHotbar();
+      }
+    });
 
       const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
 
@@ -653,27 +771,32 @@ ${error.message}` : '';
         hideStatus();
       }
 
-      window.addEventListener('resize', resize);
-      animate();
+    function resizeRendererToDisplaySize() {
+      const width = canvas.clientWidth || window.innerWidth;
+      const height = canvas.clientHeight || window.innerHeight;
+      if (canvas.width !== width || canvas.height !== height) {
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
     }
 
-    window.addEventListener('error', (event) => {
-      reportError('An error occurred while loading the world.', event.error || event.message);
-    });
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      resizeRendererToDisplaySize();
+      update();
+      renderer.render(scene, camera);
+      hideStatus();
+    }
 
-    window.addEventListener('unhandledrejection', (event) => {
-      reportError('A loading error occurred.', event.reason);
+    // Resize
+    window.addEventListener('resize', () => {
+      resizeRendererToDisplaySize();
     });
+  };
 
-    (async () => {
-      showStatus('Loading Three.js...');
-      try {
-        const THREE = await loadThree();
-        createGame(THREE);
-      } catch (error) {
-        reportError('Failed to start the 3D world.', error);
-      }
-    })();
+  startGame();
   </script>
 </body>
 </html>
