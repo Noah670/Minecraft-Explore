@@ -314,13 +314,14 @@
 
   <div id="status">Loading world...</div>
   
-  <div class="mobile-controls">
+  <!-- Mobile Controls -->
+  <div id="mobile-controls" style="display: none;">
     <div id="joystick">
       <div id="joystick-knob"></div>
     </div>
-    <div id="jumpBtn" class="mobile-btn">JUMP</div>
-    <div id="placeBtn" class="mobile-btn">PLACE</div>
-    <div id="breakBtn" class="mobile-btn">BREAK</div>
+    <button id="jumpBtn" class="mobile-btn">JUMP</button>
+    <button id="placeBtn" class="mobile-btn">PLACE</button>
+    <button id="breakBtn" class="mobile-btn">BREAK</button>
     <div id="lookArea"></div>
   </div>
 
@@ -381,6 +382,8 @@
       statusEl.textContent = message;
       statusEl.classList.remove('hidden');
     };
+    
+    const sharedGeometry = new THREE.BoxGeometry(1, 1, 1);
 
     const hideStatus = () => statusEl.classList.add('hidden');
     // World
@@ -442,19 +445,19 @@ ${error.message}` : '';
       const mesh = new THREE.Mesh(blockGeometry, material);
       
       mesh.position.set(x, y, z);
-      mesh.castShadow = type !== 'water';
+      mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.userData.type = type;
       scene.add(mesh);
       world.set(key, { mesh, type });
       if (type !== 'water') solidMeshes.push(mesh);
     }
-
+    
     function removeBlock(x, y, z) {
       const key = getKey(x, y, z);
       const block = world.get(key);
       
-      if (block && block.type !== 'water') {
+      if (block) {
         scene.remove(block.mesh);
         world.delete(key);
       }
