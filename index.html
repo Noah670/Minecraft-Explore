@@ -414,6 +414,37 @@ ${error.message}` : '';
         document.head.appendChild(script);
       });
     }
+    
+    // World generation - Complete Minecraft world
+    function initWorld() {
+      log('Generating world...');
+      world = new Map();
+      
+      const size = 25; // Larger world
+      let blocksCreated = 0;
+      let carvedCaves = 0;
+      const minY = -14;
+      
+      // Create a solid bedrock layer first
+      for (let x = -size; x <= size; x++) {
+        for (let z = -size; z <= size; z++) {
+          addBlock(x, minY, z, 'stone');
+          blocksCreated++;
+        }
+      }
+      
+      // Add terrain on top with height variation
+      for (let x = -size; x <= size; x++) {
+        for (let z = -size; z <= size; z++) {
+          // Create smooth hills using improved noise
+          const height = Math.floor(
+            Math.sin(x * 0.15) * Math.cos(z * 0.15) * 3 +
+            Math.sin(x * 0.3) * Math.cos(z * 0.3) * 2 +
+            Math.sin(x * 0.05) * Math.cos(z * 0.05) * 1
+          ) + 5;
+          
+          // Carve a few entrance shafts so caves are easier to discover.
+          const hasCaveEntrance = height > 5 && ((x * x + z * z) % 83 === 0);
 
     async function loadThree() {
       for (const src of scriptSources) {
