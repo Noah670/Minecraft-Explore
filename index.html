@@ -8,16 +8,34 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { overflow: hidden; font-family: Arial, sans-serif; background: #87CEEB; }
 
-    #canvas-container {
+    canvas#gameCanvas {
+      display: block;
       width: 100vw;
       height: 100vh;
-      display: block;
       position: fixed;
       top: 0;
       left: 0;
     }
 
-    #status {
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 18px 26px;
+      border-radius: 12px;
+      font-size: 16px;
+      text-align: center;
+      z-index: 200;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+      max-width: 320px;
+    }
+    #loading.hidden { display: none; }
+
+    #debug-panel {
       position: fixed;
       top: 10px;
       left: 10px;
@@ -32,9 +50,9 @@
       border: 1px solid rgba(0, 255, 0, 0.3);
       transition: all 0.3s;
     }
-    #status.hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
+    #debug-panel.hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
 
-    #close-status {
+    #close-debug {
       position: absolute;
       top: 5px;
       right: 5px;
@@ -50,9 +68,9 @@
       line-height: 1;
       padding: 0;
     }
-    #close-status:hover { background: rgba(255, 50, 50, 1); }
+    #close-debug:hover { background: rgba(255, 50, 50, 1); }
 
-    #toggle-status {
+    #toggle-debug {
       position: fixed;
       top: 10px;
       left: 10px;
@@ -132,27 +150,6 @@
       font-weight: bold;
     }
 
-    #status {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.85);
-      color: white;
-      padding: 18px 26px;
-      border-radius: 12px;
-      font-size: 16px;
-      text-align: center;
-      z-index: 200;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
-      max-width: 320px;
-    }
-
-    #status.hidden {
-      display: none;
-    }
-    
     #hotbar {
       position: fixed;
       bottom: 40px;
@@ -281,41 +278,38 @@
   </style>
 </head>
 <body>
-  <div id="canvas-container"></div>
+  <canvas id="gameCanvas"></canvas>
 
-  <div id="status">
-    <button id="close-status">×</button>
-    <div>Status: <span id="status-text">Initializing...</span></div>
-    <div>Renderer: <span id="renderer-status">Not started</span></div>
-    <div>World: <span id="world-status">Not generated</span></div>
-    <div>Player: <span id="player-pos">X:0 Y:0 Z:0</span></div>
-    <div>On Ground: <span id="on-ground">No</span></div>
+  <div id="loading">Initializing...</div>
+
+  <div id="debug-panel" class="hidden">
+    <button id="close-debug">x</button>
+    <div>Status: <span id="status-text">Loading</span></div>
     <div>FPS: <span id="fps">0</span></div>
+    <div>Pos: <span id="player-pos">X:0 Y:0 Z:0</span></div>
+    <div>Ground: <span id="on-ground">No</span></div>
   </div>
 
-  <button id="toggle-status">Show Debug</button>
+  <button id="toggle-debug">Debug</button>
 
   <div id="crosshair"></div>
 
   <div id="ui">
-    <button id="close-ui">×</button>
-    <h3>⛏️ Controls</h3>
-    <div>🎮 WASD - Move</div>
-    <div>🏃 Shift - Sprint</div>
-    <div>⬆️ Space - Jump</div>
-    <div>🖱️ Mouse - Look</div>
-    <div>🔨 Left Click - Break</div>
-    <div>📦 Right Click - Place</div>
-    <div>🔢 1-5 - Select Block</div>
+    <button id="close-ui">x</button>
+    <h3>Controls</h3>
+    <div>WASD - Move</div>
+    <div>Shift - Sprint</div>
+    <div>Space - Jump</div>
+    <div>Mouse - Look</div>
+    <div>Left Click - Break</div>
+    <div>Right Click - Place</div>
+    <div>1-8 - Select Block</div>
     <div style="margin-top:10px; font-size:11px; opacity:0.8;">Click screen to play</div>
   </div>
 
   <div id="hotbar"></div>
 
-  <div id="status">Loading world...</div>
-  
-  <!-- Mobile Controls -->
-  <div id="mobile-controls" style="display: none;">
+  <div id="mobile-controls">
     <div id="joystick">
       <div id="joystick-knob"></div>
     </div>
@@ -326,304 +320,183 @@
   </div>
 
   <script>
-    const statusEl = document.getElementById('status');
-    const canvas = document.getElementById('gameCanvas');
-    const hotbar = document.getElementById('hotbar');
-    const showStatus = (message) => {
-      statusEl.textContent = message;
-      statusEl.classList.remove('hidden');
-    };
-    const hideStatus = () => statusEl.classList.add('hidden');
+    (async function startGame() {
+      const loadingEl = document.getElementById('loading');
+      const debugPanel = document.getElementById('debug-panel');
+      const toggleDebug = document.getElementById('toggle-debug');
+      const hotbar = document.getElementById('hotbar');
 
-    const reportError = (message, error) => {
-      const detail = error && error.message ? `\n${error.message}` : '';
-      showStatus(`${message}${detail}`);
-      console.error(message, error);
-    };
-
-    window.addEventListener('error', (event) => {
-      reportError('An error occurred while loading the world.', event.error || event.message);
-    });
-    renderer.setClearColor(0x87CEEB, 1);
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
-    scene.add(ambientLight);
-
-    const sunLight = new THREE.DirectionalLight(0xfff9e6, 0.85);
-    sunLight.position.set(80, 120, 60);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.left = -60;
-    sunLight.shadow.camera.right = 60;
-    sunLight.shadow.camera.top = 60;
-    sunLight.shadow.camera.bottom = -60;
-    scene.add(sunLight);
-
-    const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x6B5D3F, 0.5);
-    scene.add(hemiLight);
-
-     
-    // Materials
-    const createMaterial = (color) => {
-      return new THREE.MeshLambertMaterial({ 
-        color: color,
-        flatShading: true
-      });
-    };
-
-    const showStatus = (message) => {
-      statusEl.textContent = message;
-      statusEl.classList.remove('hidden');
-    };
-    
-    const sharedGeometry = new THREE.BoxGeometry(1, 1, 1);
-
-    const hideStatus = () => statusEl.classList.add('hidden');
-    // World
-    const world = new Map();
-    let selectedBlock = 'grass';
-    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-    const reportError = (message, error) => {
-      const detail = error && error.message ? `
-${error.message}` : '';
-      showStatus(`${message}${detail}`);
-      console.error(message, error);
-    };
-
-    const scriptSources = [
-      'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-      'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
-      'https://unpkg.com/three@0.128.0/build/three.min.js'
-    ];
-
-    function loadScript(src) {
-      return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.async = true;
-        script.onload = resolve;
-        script.onerror = () => reject(new Error(`Failed to load ${src}`));
-        document.head.appendChild(script);
-      });
-    }
-    
-    // World generation - Complete Minecraft world
-    function initWorld() {
-      log('Generating world...');
-      world = new Map();
-      
-      const size = 25; // Larger world
-      let blocksCreated = 0;
-      let carvedCaves = 0;
-      const minY = -14;
-      
-      // Create a solid bedrock layer first
-      for (let x = -size; x <= size; x++) {
-        for (let z = -size; z <= size; z++) {
-          addBlock(x, minY, z, 'stone');
-          blocksCreated++;
-        }
+      function setLoading(msg) {
+        if (loadingEl) loadingEl.textContent = msg;
+        console.log('[Game]', msg);
       }
-      
-      // Add terrain on top with height variation
-      for (let x = -size; x <= size; x++) {
-        for (let z = -size; z <= size; z++) {
-          // Create smooth hills using improved noise
-          const height = Math.floor(
-            Math.sin(x * 0.15) * Math.cos(z * 0.15) * 3 +
-            Math.sin(x * 0.3) * Math.cos(z * 0.3) * 2 +
-            Math.sin(x * 0.05) * Math.cos(z * 0.05) * 1
-          ) + 5;
-          
-          // Carve a few entrance shafts so caves are easier to discover.
-          const hasCaveEntrance = height > 5 && ((x * x + z * z) % 83 === 0);
 
-    async function loadThree() {
-      for (const src of scriptSources) {
+      function hideLoading() {
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (debugPanel) debugPanel.classList.remove('hidden');
+        if (toggleDebug) toggleDebug.style.display = 'block';
+      }
+
+      function fatalError(msg) {
+        if (loadingEl) loadingEl.textContent = 'Error: ' + msg;
+        console.error('[Game] Fatal:', msg);
+      }
+
+      // Wire up UI close buttons
+      const closeDebug = document.getElementById('close-debug');
+      if (closeDebug) closeDebug.addEventListener('click', () => {
+        if (debugPanel) debugPanel.classList.add('hidden');
+        if (toggleDebug) toggleDebug.style.display = 'block';
+      });
+      if (toggleDebug) toggleDebug.addEventListener('click', () => {
+        if (debugPanel) debugPanel.classList.remove('hidden');
+        toggleDebug.style.display = 'none';
+      });
+      const closeUi = document.getElementById('close-ui');
+      const uiPanel = document.getElementById('ui');
+      if (closeUi) closeUi.addEventListener('click', () => {
+        if (uiPanel) uiPanel.classList.add('hidden');
+      });
+
+      // Load Three.js
+      setLoading('Loading Three.js...');
+      const cdnSources = [
+        'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+        'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+        'https://unpkg.com/three@0.128.0/build/three.min.js'
+      ];
+
+      for (const src of cdnSources) {
+        if (window.THREE) break;
         try {
-          await loadScript(src);
-          if (window.THREE) return window.THREE;
-        } catch (error) {
-          console.warn(error);
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('Failed: ' + src));
+            document.head.appendChild(s);
+          });
+        } catch (e) {
+          console.warn(e.message);
         }
       }
-      throw new Error('Unable to load Three.js from all configured CDNs.');
-    }
 
-    function isWebGLAvailable() {
+      if (!window.THREE) {
+        fatalError('Could not load Three.js. Check your internet connection.');
+        return;
+      }
+
+      // Check WebGL availability
       try {
         const testCanvas = document.createElement('canvas');
-        return !!(window.WebGLRenderingContext && (
-          testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl')
-        ));
-      } catch (error) {
-        return false;
-    const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-
-    function addBlock(x, y, z, type) {
-      const key = getKey(x, y, z);
-      if (world.has(key)) return;
-
-      const material = blockMaterials[type];
-      const mesh = new THREE.Mesh(blockGeometry, material);
-      
-      mesh.position.set(x, y, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData.type = type;
-      scene.add(mesh);
-      world.set(key, { mesh, type });
-      if (type !== 'water') solidMeshes.push(mesh);
-    }
-    
-    function removeBlock(x, y, z) {
-      const key = getKey(x, y, z);
-      const block = world.get(key);
-      
-      if (block) {
-        scene.remove(block.mesh);
-        world.delete(key);
-      }
-
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(20, 20, 520, 110);
-      ctx.fillStyle = '#fff';
-      ctx.font = '18px Arial';
-      ctx.fillText('3D mode unavailable on this device/browser.', 40, 55);
-      ctx.font = '14px Arial';
-      ctx.fillText('Fallback mode loaded so the world is still visible.', 40, 82);
-      ctx.fillText(reason || 'WebGL renderer could not be initialized.', 40, 106);
-    }
-
-    function getBlockKey(x, y, z) {
-      return `${x}|${y}|${z}`;
-    }
-
-    function createGame(THREE) {
-      if (!isWebGLAvailable()) {
-        showStatus('WebGL is unavailable. Enable hardware acceleration or use a modern browser.');
-        return;
-    // Generate world
-    const size = isMobile ? 14 : 20;
-    const waterLevel = 5;
-
-    for (let x = -size; x <= size; x++) {
-      for (let z = -size; z <= size; z++) {
-        const height = getHeight(x, z);
-        const isBeach = height <= waterLevel + 1;
-        
-        for (let y = 0; y <= height; y++) {
-          let type;
-          if (y === height) {
-            type = isBeach ? 'sand' : 'grass';
-          } else if (y > height - 2) {
-            type = isBeach ? 'sand' : 'dirt';
-          } else {
-            type = 'stone';
-          }
-          if (height < waterLevel) {
-            for (let y = height + 1; y <= waterLevel; y++) {
-              addBlock(x, y, z, 'water');
-              count++;
-            }
-          }
+        const hasWebGL = !!(window.WebGLRenderingContext &&
+          (testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl')));
+        if (!hasWebGL) {
+          fatalError('WebGL not supported. Enable hardware acceleration in your browser settings.');
+          return;
         }
+      } catch (e) {
+        fatalError('WebGL check failed: ' + e.message);
+        return;
       }
 
-      showStatus('Building world...');
+      const THREE = window.THREE;
+      setLoading('Initializing renderer...');
 
-    // Input
-    const keys = {};
-    const mouse = { x: 0, y: 0, locked: false };
-    const joystick = { active: false, deltaX: 0, deltaY: 0 };
-    const lookTouch = { active: false, lastX: 0, lastY: 0 };
-    // Event listeners
-    document.addEventListener('keydown', (e) => {
-      keys[e.code] = true;
-      const num = parseInt(e.key);
-      if (num >= 1 && num <= 8) {
-        const types = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'cobblestone', 'planks'];
-        selectedBlock = types[num - 1];
-        updateHotbar();
+      // Get the canvas element
+      const canvas = document.getElementById('gameCanvas');
+      if (!canvas) {
+        fatalError('Canvas element not found.');
+        return;
       }
-      return false;
-    }
 
+      // Scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87CEEB);
+      scene.fog = new THREE.Fog(0x87CEEB, 40, 80);
+
+      // Camera
       const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
 
-      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-      renderer.setClearColor(0x87CEEB, 1);
-      renderer.outputEncoding = THREE.sRGBEncoding;
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      // Renderer
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setClearColor(0x87CEEB, 1);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      } catch (e) {
+        fatalError('Renderer init failed: ' + e.message);
+        return;
+      }
 
-      canvas.addEventListener('webglcontextlost', (event) => {
-        event.preventDefault();
-        showStatus('WebGL context lost. Refresh to restore rendering.');
+      canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        setLoading('WebGL context lost. Refresh to restore.');
+        if (loadingEl) loadingEl.classList.remove('hidden');
       });
 
+      // Lighting
       scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+
       const sun = new THREE.DirectionalLight(0xfff9e6, 0.9);
       sun.position.set(60, 90, 40);
       sun.castShadow = true;
       sun.shadow.mapSize.set(1024, 1024);
+      sun.shadow.camera.left = -60;
+      sun.shadow.camera.right = 60;
+      sun.shadow.camera.top = 60;
+      sun.shadow.camera.bottom = -60;
       scene.add(sun);
 
+      scene.add(new THREE.HemisphereLight(0x87CEEB, 0x6B5D3F, 0.4));
+
+      // Materials
+      const materials = {
+        grass: [
+          new THREE.MeshLambertMaterial({ color: 0x4a7a2f }),
+          new THREE.MeshLambertMaterial({ color: 0x4a7a2f }),
+          new THREE.MeshLambertMaterial({ color: 0x5cb230 }),
+          new THREE.MeshLambertMaterial({ color: 0x7d5f35 }),
+          new THREE.MeshLambertMaterial({ color: 0x4a7a2f }),
+          new THREE.MeshLambertMaterial({ color: 0x4a7a2f })
+        ],
+        dirt:        new THREE.MeshLambertMaterial({ color: 0x7d5f35 }),
+        stone:       new THREE.MeshLambertMaterial({ color: 0x7a7a7a }),
+        wood:        new THREE.MeshLambertMaterial({ color: 0x6b4423 }),
+        leaves:      new THREE.MeshLambertMaterial({ color: 0x2d8b2d, transparent: true, opacity: 0.9 }),
+        sand:        new THREE.MeshLambertMaterial({ color: 0xe8c998 }),
+        cobblestone: new THREE.MeshLambertMaterial({ color: 0x5a5a5a }),
+        planks:      new THREE.MeshLambertMaterial({ color: 0xb8935f }),
+        water:       new THREE.MeshLambertMaterial({ color: 0x3d8fd1, transparent: true, opacity: 0.75 })
+      };
+
+      // World state
       const world = new Map();
       const collidableMeshes = [];
       const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-      const materials = {
-        grassTop: new THREE.MeshLambertMaterial({ color: 0x5cb230 }),
-        grassSide: new THREE.MeshLambertMaterial({ color: 0x4a7a2f }),
-        dirt: new THREE.MeshLambertMaterial({ color: 0x7d5f35 }),
-        stone: new THREE.MeshLambertMaterial({ color: 0x7a7a7a }),
-        wood: new THREE.MeshLambertMaterial({ color: 0x6b4423 }),
-        leaves: new THREE.MeshLambertMaterial({ color: 0x2d8b2d, transparent: true, opacity: 0.9 }),
-        sand: new THREE.MeshLambertMaterial({ color: 0xe8c998 }),
-        cobblestone: new THREE.MeshLambertMaterial({ color: 0x5a5a5a }),
-        planks: new THREE.MeshLambertMaterial({ color: 0xb8935f }),
-        water: new THREE.MeshLambertMaterial({ color: 0x3d8fd1, transparent: true, opacity: 0.75 })
-      };
 
-      const blockMaterialByType = {
-        grass: [materials.grassSide, materials.grassSide, materials.grassTop, materials.dirt, materials.grassSide, materials.grassSide],
-        dirt: materials.dirt,
-        stone: materials.stone,
-        wood: materials.wood,
-        leaves: materials.leaves,
-        sand: materials.sand,
-        cobblestone: materials.cobblestone,
-        planks: materials.planks,
-        water: materials.water
-      };
+      function getKey(x, y, z) {
+        return `${x}|${y}|${z}`;
+      }
 
       function addBlock(x, y, z, type) {
-        const key = getBlockKey(x, y, z);
+        const key = getKey(x, y, z);
         if (world.has(key)) return;
-
-        const mesh = new THREE.Mesh(blockGeometry, blockMaterialByType[type]);
+        const mesh = new THREE.Mesh(blockGeometry, materials[type]);
         mesh.position.set(x, y, z);
-        mesh.castShadow = type !== 'water';
+        mesh.castShadow = (type !== 'water');
         mesh.receiveShadow = true;
         mesh.userData.blockType = type;
         scene.add(mesh);
-
         world.set(key, { type, mesh });
         if (type !== 'water') collidableMeshes.push(mesh);
       }
 
       function removeBlock(x, y, z) {
-        const key = getBlockKey(x, y, z);
+        const key = getKey(x, y, z);
         const block = world.get(key);
         if (!block || block.type === 'water') return;
         scene.remove(block.mesh);
@@ -638,9 +511,13 @@ ${error.message}` : '';
         return Math.floor(6 + n1 * 2 + n2 * 3);
       }
 
-      function generateWorld() {
-        const isMobile = window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const size = isMobile ? 14 : 20;
+      // World generation
+      setLoading('Generating world...');
+
+      (function generateWorld() {
+        const isMob = window.matchMedia('(max-width: 768px)').matches ||
+          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const size = isMob ? 14 : 20;
         const waterLevel = 5;
 
         for (let x = -size; x <= size; x++) {
@@ -657,10 +534,9 @@ ${error.message}` : '';
             }
           }
         }
-      }
+      })();
 
-      generateWorld();
-
+      // Player
       const player = {
         position: new THREE.Vector3(0, 12, 8),
         velocity: new THREE.Vector3(),
@@ -674,28 +550,52 @@ ${error.message}` : '';
         bob: 0
       };
 
+      camera.position.copy(player.position);
+      camera.position.y += player.height;
+
+      // Input state
       const keys = {};
       const look = { yaw: 0, pitch: 0, locked: false };
       const raycaster = new THREE.Raycaster();
       raycaster.far = 6;
       const upAxis = new THREE.Vector3(0, 1, 0);
 
+      const blockTypes = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'cobblestone', 'planks'];
+      let selectedBlock = 'grass';
+
+      // Build hotbar
+      hotbar.innerHTML = '';
+      blockTypes.forEach((name, idx) => {
+        const slot = document.createElement('div');
+        slot.className = 'block-slot' + (idx === 0 ? ' selected' : '');
+        const mat = Array.isArray(materials[name]) ? materials[name][2] : materials[name];
+        slot.style.background = '#' + mat.color.getHexString();
+        slot.innerHTML = `<div class="num">${idx + 1}</div>`;
+        slot.addEventListener('click', () => {
+          selectedBlock = name;
+          [...hotbar.children].forEach((c, i) => {
+            c.className = 'block-slot' + (i === idx ? ' selected' : '');
+          });
+        });
+        hotbar.appendChild(slot);
+      });
+
+      // Helpers
       function solidAt(x, y, z) {
-        const block = world.get(getBlockKey(Math.round(x), Math.floor(y), Math.round(z)));
+        const block = world.get(getKey(Math.round(x), Math.floor(y), Math.round(z)));
         return !!block && block.type !== 'water';
       }
 
       function playerCollides(pos) {
         const yMin = pos.y;
         const yMax = pos.y + player.height;
-        const points = [
+        const corners = [
           [pos.x - player.radius, pos.z - player.radius],
           [pos.x + player.radius, pos.z - player.radius],
           [pos.x - player.radius, pos.z + player.radius],
           [pos.x + player.radius, pos.z + player.radius]
         ];
-
-        for (const [px, pz] of points) {
+        for (const [px, pz] of corners) {
           for (let y = Math.floor(yMin); y <= Math.floor(yMax); y++) {
             if (solidAt(px, y, pz)) return true;
           }
@@ -707,84 +607,150 @@ ${error.message}` : '';
         raycaster.setFromCamera({ x: 0, y: 0 }, camera);
         const hits = raycaster.intersectObjects(collidableMeshes, false);
         if (!hits.length) return;
-
         const hit = hits[0];
         const target = hit.object.position;
-
         if (isBreak) {
           removeBlock(target.x, target.y, target.z);
-          return;
+        } else {
+          const placePos = target.clone().add(hit.face.normal);
+          addBlock(Math.round(placePos.x), Math.round(placePos.y), Math.round(placePos.z), selectedBlock);
         }
-
-        const placePos = target.clone().add(hit.face.normal);
-        addBlock(placePos.x, placePos.y, placePos.z, selectedBlock);
       }
 
-      const blockTypes = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'cobblestone', 'planks'];
-      let selectedBlock = 'grass';
-
-      hotbar.innerHTML = '';
-      blockTypes.forEach((name, idx) => {
-        const slot = document.createElement('div');
-        slot.className = 'block-slot' + (idx === 0 ? ' selected' : '');
-        slot.style.background = `#${(blockMaterialByType[name].color ? blockMaterialByType[name].color.getHexString() : 'ffffff')}`;
-        slot.innerHTML = `<div class="number">${idx + 1}</div>`;
-        slot.addEventListener('click', () => {
-          selectedBlock = name;
-          [...hotbar.children].forEach((child, i) => {
-            child.className = 'block-slot' + (i === idx ? ' selected' : '');
-          });
-        });
-        hotbar.appendChild(slot);
-      });
-
+      // Keyboard events
       document.addEventListener('keydown', (e) => {
         keys[e.code] = true;
         const n = Number(e.key);
         if (n >= 1 && n <= blockTypes.length) {
           selectedBlock = blockTypes[n - 1];
-          [...hotbar.children].forEach((child, i) => {
-            child.className = 'block-slot' + (i === n - 1 ? ' selected' : '');
+          [...hotbar.children].forEach((c, i) => {
+            c.className = 'block-slot' + (i === n - 1 ? ' selected' : '');
           });
         }
       });
       document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
+      // Mouse events
       canvas.addEventListener('click', () => {
-        if (!look.locked) canvas.requestPointerLock?.();
+        if (!look.locked) canvas.requestPointerLock();
       });
-      lookArea.addEventListener('touchend', () => { lookTouch.active = false; });
-
       document.addEventListener('pointerlockchange', () => {
         look.locked = document.pointerLockElement === canvas;
       });
-
       document.addEventListener('mousemove', (e) => {
         if (!look.locked) return;
         look.yaw += e.movementX * 0.002;
         look.pitch -= e.movementY * 0.002;
         look.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, look.pitch));
       });
-
       document.addEventListener('mousedown', (e) => {
         if (!look.locked) return;
         e.preventDefault();
         if (e.button === 0) handleBlockAction(true);
         if (e.button === 2) handleBlockAction(false);
       });
-
       document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      function resize() {
-        const width = canvas.clientWidth || window.innerWidth;
-        const height = canvas.clientHeight || window.innerHeight;
-        if (canvas.width !== width || canvas.height !== height) {
-          renderer.setSize(width, height, false);
-          camera.aspect = width / height;
-          camera.updateProjectionMatrix();
-        }
+      // Mobile joystick
+      const joystickEl = document.getElementById('joystick');
+      const joystickKnob = document.getElementById('joystick-knob');
+      const joystick = { active: false, deltaX: 0, deltaY: 0, startX: 0, startY: 0 };
+
+      if (joystickEl) {
+        joystickEl.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          joystick.active = true;
+          joystick.startX = t.clientX;
+          joystick.startY = t.clientY;
+          joystick.deltaX = 0;
+          joystick.deltaY = 0;
+        }, { passive: false });
+
+        joystickEl.addEventListener('touchmove', (e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          const dx = t.clientX - joystick.startX;
+          const dy = t.clientY - joystick.startY;
+          const maxDist = 40;
+          const dist = Math.min(Math.hypot(dx, dy), maxDist);
+          const angle = Math.atan2(dy, dx);
+          joystick.deltaX = Math.cos(angle) * dist / maxDist;
+          joystick.deltaY = Math.sin(angle) * dist / maxDist;
+          if (joystickKnob) {
+            const ox = Math.cos(angle) * dist;
+            const oy = Math.sin(angle) * dist;
+            joystickKnob.style.transform = `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`;
+          }
+        }, { passive: false });
+
+        const endJoystick = () => {
+          joystick.active = false;
+          joystick.deltaX = 0;
+          joystick.deltaY = 0;
+          if (joystickKnob) joystickKnob.style.transform = 'translate(-50%, -50%)';
+        };
+        joystickEl.addEventListener('touchend', endJoystick);
+        joystickEl.addEventListener('touchcancel', endJoystick);
       }
 
+      // Mobile look area
+      const lookAreaEl = document.getElementById('lookArea');
+      const lookTouch = { active: false, lastX: 0, lastY: 0, id: null };
+
+      if (lookAreaEl) {
+        lookAreaEl.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          lookTouch.active = true;
+          lookTouch.lastX = t.clientX;
+          lookTouch.lastY = t.clientY;
+          lookTouch.id = t.identifier;
+        }, { passive: false });
+
+        lookAreaEl.addEventListener('touchmove', (e) => {
+          e.preventDefault();
+          for (const t of e.changedTouches) {
+            if (t.identifier === lookTouch.id) {
+              look.yaw += (t.clientX - lookTouch.lastX) * 0.004;
+              look.pitch -= (t.clientY - lookTouch.lastY) * 0.004;
+              look.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, look.pitch));
+              lookTouch.lastX = t.clientX;
+              lookTouch.lastY = t.clientY;
+            }
+          }
+        }, { passive: false });
+
+        lookAreaEl.addEventListener('touchend', () => { lookTouch.active = false; });
+        lookAreaEl.addEventListener('touchcancel', () => { lookTouch.active = false; });
+      }
+
+      // Mobile action buttons
+      const jumpBtn = document.getElementById('jumpBtn');
+      const placeBtn = document.getElementById('placeBtn');
+      const breakBtn = document.getElementById('breakBtn');
+      if (jumpBtn) {
+        jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); keys['Space'] = true; }, { passive: false });
+        jumpBtn.addEventListener('touchend', () => { keys['Space'] = false; });
+      }
+      if (placeBtn) {
+        placeBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleBlockAction(false); }, { passive: false });
+      }
+      if (breakBtn) {
+        breakBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleBlockAction(true); }, { passive: false });
+      }
+
+      // Resize handler
+      function resize() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener('resize', resize);
+
+      // Update loop
       function update() {
         const speed = keys['ShiftLeft'] ? player.sprintSpeed : player.speed;
         const move = new THREE.Vector3();
@@ -794,94 +760,89 @@ ${error.message}` : '';
         if (keys['KeyS']) { move.z += speed; moving = true; }
         if (keys['KeyA']) { move.x -= speed; moving = true; }
         if (keys['KeyD']) { move.x += speed; moving = true; }
+
+        if (joystick.active && (joystick.deltaX !== 0 || joystick.deltaY !== 0)) {
+          move.x += joystick.deltaX * speed;
+          move.z += joystick.deltaY * speed;
+          moving = true;
+        }
+
         if (keys['Space'] && player.onGround) {
           player.velocity.y = player.jumpForce;
           player.onGround = false;
         }
 
         move.applyAxisAngle(upAxis, look.yaw);
-
         player.velocity.y -= player.gravity;
 
-        const next = player.position.clone();
-        next.x += move.x;
-        next.z += move.z;
+        const tryX = player.position.clone();
+        tryX.x += move.x;
+        if (!playerCollides(tryX)) player.position.x = tryX.x;
 
-        const horizontalTry = player.position.clone();
-        horizontalTry.x = next.x;
-        if (!playerCollides(horizontalTry)) player.position.x = horizontalTry.x;
-        horizontalTry.x = player.position.x;
-        horizontalTry.z = next.z;
-        if (!playerCollides(horizontalTry)) player.position.z = horizontalTry.z;
+        const tryZ = player.position.clone();
+        tryZ.z += move.z;
+        if (!playerCollides(tryZ)) player.position.z = tryZ.z;
 
-        const verticalTry = player.position.clone();
-        verticalTry.y += player.velocity.y;
-        if (!playerCollides(verticalTry)) {
-          player.position.y = verticalTry.y;
+        const tryY = player.position.clone();
+        tryY.y += player.velocity.y;
+        if (!playerCollides(tryY)) {
+          player.position.y = tryY.y;
           player.onGround = false;
         } else {
           if (player.velocity.y < 0) player.onGround = true;
           player.velocity.y = 0;
         }
 
-        if (player.position.y < 1) {
+        // Fall reset
+        if (player.position.y < -5) {
           player.position.set(0, 12, 8);
           player.velocity.set(0, 0, 0);
         }
 
         if (moving && player.onGround) player.bob += 0.2;
-        const bobAmount = moving && player.onGround ? Math.sin(player.bob) * 0.08 : 0;
+        const bobAmount = (moving && player.onGround) ? Math.sin(player.bob) * 0.08 : 0;
 
         camera.position.copy(player.position);
         camera.position.y += player.height - 0.25 + bobAmount;
         camera.rotation.order = 'YXZ';
         camera.rotation.y = look.yaw;
         camera.rotation.x = look.pitch;
+
+        // Update debug display
+        const posEl = document.getElementById('player-pos');
+        if (posEl) {
+          posEl.textContent = `X:${player.position.x.toFixed(1)} Y:${player.position.y.toFixed(1)} Z:${player.position.z.toFixed(1)}`;
+        }
+        const groundEl = document.getElementById('on-ground');
+        if (groundEl) groundEl.textContent = player.onGround ? 'Yes' : 'No';
       }
 
-      function animate() {
+      // FPS tracking
+      let lastTime = performance.now();
+      let frameCount = 0;
+      let fpsTimer = 0;
+
+      function animate(now) {
         requestAnimationFrame(animate);
-        resize();
+        const delta = now - lastTime;
+        lastTime = now;
+        fpsTimer += delta;
+        frameCount++;
+        if (fpsTimer >= 1000) {
+          const fpsEl = document.getElementById('fps');
+          if (fpsEl) fpsEl.textContent = frameCount;
+          frameCount = 0;
+          fpsTimer = 0;
+        }
         update();
         renderer.render(scene, camera);
-        hideStatus();
       }
 
-    function resizeRendererToDisplaySize() {
-      const width = canvas.clientWidth || window.innerWidth;
-      const height = canvas.clientHeight || window.innerHeight;
-      if (canvas.width !== width || canvas.height !== height) {
-        renderer.setSize(width, height, false);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-      }
-    }
-
-    function resize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    let lastTime = performance.now();
-    let frameCount = 0;
-    let fpsTimer = 0;
-
-    function animate(time) {
-      requestAnimationFrame(animate);
-      resizeRendererToDisplaySize();
-      update();
-      renderer.render(scene, camera);
-      hideStatus();
-    }
-
-    // Resize
-    window.addEventListener('resize', () => {
-      resizeRendererToDisplaySize();
-    });
-  };
-
-  startGame();
+      // Ready — hide loading overlay and start
+      setLoading('World ready! Click to play.');
+      setTimeout(() => { hideLoading(); }, 1500);
+      animate(performance.now());
+    })();
   </script>
 </body>
 </html>
